@@ -1,5 +1,6 @@
 import streamlit as st
 import pyreadstat
+import tempfile
 import os
 
 st.set_page_config(page_title="XPT to SAS7BDAT Converter", layout="centered")
@@ -13,26 +14,30 @@ if uploaded_file is not None:
     
     if st.button("Convert"):
         try:
-            # Read the .xpt file
-            df, meta = pyreadstat.read_xport(uploaded_file)
+            # Save uploaded file to a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xpt") as temp_input:
+                temp_input.write(uploaded_file.read())
+                temp_input_path = temp_input.name
 
-            # Create output filename
-            output_filename = file_name.replace(".xpt", ".sas7bdat")
+            # Output file path
+            temp_output_path = temp_input_path.replace(".xpt", ".sas7bdat")
 
-            # Save as .sas7bdat
-            pyreadstat.write_sas7bdat(df, output_filename)
+            # Read .xpt and write .sas7bdat
+            df, meta = pyreadstat.read_xport(temp_input_path)
+            pyreadstat.write_sas7bdat(df, temp_output_path)
 
-            # Offer download
-            with open(output_filename, "rb") as f:
+            # Download button
+            with open(temp_output_path, "rb") as f:
                 st.download_button(
-                    label="Download .sas7bdat file",
+                    label="⬇️ Download .sas7bdat file",
                     data=f,
-                    file_name=output_filename,
+                    file_name=file_name.replace(".xpt", ".sas7bdat"),
                     mime="application/octet-stream"
                 )
 
             # Cleanup
-            os.remove(output_filename)
+            os.remove(temp_input_path)
+            os.remove(temp_output_path)
 
         except Exception as e:
             st.error(f"Error: {e}")
