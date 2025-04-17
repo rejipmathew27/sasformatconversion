@@ -10,25 +10,34 @@ import tempfile
 st.set_page_config(page_title="XPT to SAS7BDAT Converter", layout="centered")
 st.title("📦 XPT to SAS7BDAT Converter (via R + haven)")
 
-st.write("""
-This app converts `.xpt` files to `.sas7bdat` using R and the **haven** package.
+# Sidebar instructions and options
+with st.sidebar:
+    st.markdown("## 📋 Instructions")
+    st.write("""
+1. Choose an input method (upload files or use folder).
+2. Upload or locate `.xpt` files.
+3. Select specific files to convert.
+4. Click **Run Conversion** to generate `.sas7bdat` files.
+5. Download files individually or as ZIP.
+    """)
+    
+    conversion_method = st.radio(
+        "Choose Input Method:",
+        ["Folder Path", "Upload Files"],
+        index=1  # Default = "Upload Files"
+    )
 
-### You can:
-- 📂 Specify a folder containing `.xpt` files
-- 📤 Upload `.xpt` files manually
-- 🎯 Select which files to convert
-- 💾 Optionally save output to disk
-""")
+    save_output = st.checkbox("Save converted files to server")
 
-conversion_method = st.radio("Choose Input Method:", ["Upload Files","Folder Path"])
-save_output = st.checkbox("Save converted files to server (in session folder)")
 xpt_files = []
 source_label = ""
 input_dir = None
 
+# === Folder Path Option ===
 if conversion_method == "Folder Path":
-    folder_path = st.text_input("Enter full path to folder containing .xpt files")
-    show_path = st.button("Show Folder Path")
+    with st.sidebar:
+        folder_path = st.text_input("Enter full path to folder containing .xpt files")
+        show_path = st.button("Show Folder Path")
 
     if folder_path:
         input_dir = Path(folder_path).expanduser().resolve()
@@ -42,8 +51,10 @@ if conversion_method == "Folder Path":
         else:
             st.error("Invalid folder path.")
 
+# === Upload Option ===
 elif conversion_method == "Upload Files":
-    uploaded = st.file_uploader("Upload one or more `.xpt` files", type=["xpt"], accept_multiple_files=True)
+    with st.sidebar:
+        uploaded = st.file_uploader("Upload one or more `.xpt` files", type=["xpt"], accept_multiple_files=True)
     if uploaded:
         input_dir = Path(tempfile.mkdtemp())
         for file in uploaded:
@@ -52,7 +63,7 @@ elif conversion_method == "Upload Files":
         xpt_files = sorted(input_dir.glob("*.xpt"))
         source_label = "from uploaded files"
 
-# File selection
+# === File Selection ===
 selected_files = []
 
 if xpt_files:
@@ -71,6 +82,7 @@ if xpt_files:
     )
     selected_files = [f for f in xpt_files if f.name in selected_file_names]
 
+# === Conversion ===
 if selected_files:
     output_dir = Path(tempfile.mkdtemp()) if conversion_method == "Upload Files" else input_dir / "converted_sas7bdat"
     output_dir.mkdir(exist_ok=True)
@@ -89,57 +101,9 @@ if selected_files:
         r_script_lines.append(f'write_sas(data, "{out_file.as_posix()}")\n')
 
     r_script = "\n".join(r_script_lines)
-    st.subheader("Generated R Script")
+    st.subheader("🧪 Generated R Script")
     st.code(r_script, language="r")
 
     if st.button("🚀 Run Conversion"):
         r_script_path = output_dir / "convert_selected.R"
-        r_script_path.write_text(r_script)
-
-        try:
-            result = subprocess.run(
-                ["Rscript", str(r_script_path)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True
-            )
-            st.success("🎉 Conversion completed successfully!")
-            st.text(result.stdout)
-
-            converted_files = [output_dir / (f.stem + ".sas7bdat") for f in selected_files]
-
-            if converted_files:
-                st.subheader("📥 Download Converted Files")
-
-                for file in converted_files:
-                    with open(file, "rb") as f:
-                        st.download_button(
-                            label=f"Download {file.name}",
-                            data=f.read(),
-                            file_name=file.name,
-                            mime="application/octet-stream"
-                        )
-
-                # ZIP download
-                zip_buf = BytesIO()
-                with zipfile.ZipFile(zip_buf, "w") as zf:
-                    for f in converted_files:
-                        zf.write(f, arcname=f.name)
-                st.download_button(
-                    "Download All as ZIP",
-                    data=zip_buf.getvalue(),
-                    file_name="converted_sas7bdat.zip",
-                    mime="application/zip"
-                )
-
-                if save_output:
-                    saved_dir = Path.cwd() / "saved_converted_output"
-                    saved_dir.mkdir(exist_ok=True)
-                    for f in converted_files:
-                        (saved_dir / f.name).write_bytes(f.read_bytes())
-                    st.success(f"✔️ Files also saved to: `{saved_dir}`")
-
-        except subprocess.CalledProcessError as e:
-            st.error("❌ Error running R script:")
-            st.code(e.stderr)
+        r_script_
