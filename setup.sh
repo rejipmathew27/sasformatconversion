@@ -2,30 +2,38 @@
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
+# Print each command before executing it (useful for debugging)
+set -x
 
 # --- Install R Packages ---
-# This script assumes that R itself has already been installed
-# via the apt.txt file (r-base, r-base-dev).
-# It runs an R script (install_packages.R) which contains
-# the actual R commands to install packages from CRAN.
-
 echo "Running R script to install packages..."
 
 # Execute the R script to install 'haven'
-# Ensure install_packages.R is in the same directory (root of your repo)
 Rscript install_packages.R
+# Check the exit code of the R script explicitly
+if [ $? -ne 0 ]; then
+  echo "ERROR: Rscript install_packages.R failed!"
+  exit 1
+fi
+echo "R package installation script finished successfully."
 
-echo "R package installation script finished."
 
 # --- Install rpy2 using pip AFTER R is installed ---
-# Now that R and its packages (like haven) should be installed,
-# we can install the Python package rpy2 which depends on finding R.
-
 echo "Installing rpy2 using pip..."
+
+# Run pip install and check exit code
 pip install rpy2
+if [ $? -ne 0 ]; then
+  echo "ERROR: pip install rpy2 failed!"
+  exit 1
+fi
+echo "rpy2 installation finished successfully."
 
-echo "rpy2 installation finished."
 
+# --- Turn off command printing ---
+set +x
+
+echo "Setup script completed successfully."
 
 # --- Add any other setup commands below if needed ---
 
