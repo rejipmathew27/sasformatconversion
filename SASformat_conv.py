@@ -1,3 +1,5 @@
+
+
 import streamlit as st 
 import pandas as pd
 import pyreadstat
@@ -27,7 +29,7 @@ try:
     st.sidebar.write(f"Pyreadstat Location: `{pyreadstat.__file__}`")
     st.sidebar.write(f"Has 'read_xpt': `{hasattr(pyreadstat, 'read_xpt')}`")
     st.sidebar.write(f"Has 'read_xport': `{hasattr(pyreadstat, 'read_xport')}`")
-    st.sidebar.write(f"Has 'write_sas7bdat': `{hasattr(pyreadstat, 'write_sas7bdat')}`")
+    st.sidebar.write(f"Has 'write_sas7dat': `{hasattr(pyreadstat, 'write_sas7dat')}`")
 except Exception as e:
     st.sidebar.error(f"Error fetching pyreadstat debug info: {e}")
 
