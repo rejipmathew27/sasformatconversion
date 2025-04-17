@@ -20,9 +20,8 @@ This app converts `.xpt` files to `.sas7bdat` using R and the **haven** package.
 - 💾 Optionally save output to disk
 """)
 
-conversion_method = st.radio("Choose Input Method:", ["Folder Path", "Upload Files"])
+conversion_method = st.radio("Choose Input Method:", ["Upload Files","Folder Path"])
 save_output = st.checkbox("Save converted files to server (in session folder)")
-
 xpt_files = []
 source_label = ""
 input_dir = None
