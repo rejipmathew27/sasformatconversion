@@ -4,6 +4,7 @@ import pyreadstat
 from pathlib import Path
 import os
 import tempfile # Required for handling single uploaded file
+import sys # Import sys module
 
 # --- Page Configuration ---
 st.set_page_config(layout="wide")
@@ -13,7 +14,27 @@ st.write("""
     You can either convert all `.xpt` files within a specified directory
     or upload and convert a single `.xpt` file.
 """)
-st.write(f"*(Current Date: {pd.Timestamp.now().strftime('%Y-%m-%d')})*") # Add current date info
+# Display current date using pandas for consistent formatting
+st.write(f"*(Current Date: {pd.Timestamp.now().strftime('%Y-%m-%d')})*")
+
+# --- Debugging Info (Keep this for troubleshooting if needed) ---
+st.sidebar.subheader("Debug Info")
+st.sidebar.write(f"Python Executable: `{sys.executable}`")
+st.sidebar.write(f"Python Version: `{sys.version}`")
+try:
+    st.sidebar.write(f"Pyreadstat Version: `{pyreadstat.__version__}`")
+    st.sidebar.write(f"Pyreadstat Location: `{pyreadstat.__file__}`")
+    # Check for both attributes for comparison during debugging
+    st.sidebar.write(f"Has 'read_xpt' attr: `{hasattr(pyreadstat, 'read_xpt')}`")
+    st.sidebar.write(f"Has 'read_xport' attr: `{hasattr(pyreadstat, 'read_xport')}`")
+except ImportError:
+    st.sidebar.error("Could not import pyreadstat inside Streamlit.")
+except AttributeError as e:
+    st.sidebar.error(f"AttributeError accessing pyreadstat details: {e}")
+except Exception as e:
+    st.sidebar.error(f"Error accessing pyreadstat details: {e}")
+# --- End Debugging Info ---
+
 
 # --- Sidebar Configuration ---
 st.sidebar.header("Configuration")
@@ -94,7 +115,6 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                  try:
                     # Find all .xpt files (case-insensitive search using glob)
                     xpt_files = list(input_path.glob('[!.]*[xX][pP][tT]'))
-                    # Filter out hidden files (starting with '.') just in case
 
                     if not xpt_files:
                         st.warning(f"⚠️ No `.xpt` files found in the input directory: {input_path.resolve()}")
@@ -106,27 +126,25 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                         success_count = 0
                         error_count = 0
                         error_details = []
-                        results_container = st.container() # To hold success/error messages
+                        results_container = st.container()
 
                         for i, xpt_file_path in enumerate(xpt_files):
-                            base_filename = xpt_file_path.stem # Gets filename without extension
+                            base_filename = xpt_file_path.stem
                             output_filename = f"{base_filename}.sas7bdat"
                             output_file_path = output_path / output_filename
 
                             status_text.text(f"Processing ({i+1}/{len(xpt_files)}): {xpt_file_path.name} -> {output_filename}...")
 
                             try:
-                                # --- CORRECTED READ CALL ---
-                                # Read XPT file (Removed the problematic encoding argument)
-                                df, meta = pyreadstat.read_xpt(str(xpt_file_path))
-                                # --------------------------
+                                # --- MODIFIED READ CALL (using read_xport as requested) ---
+                                # Note: pyreadstat documentation usually specifies read_xpt for XPT files.
+                                # Trying read_xport as requested. If this fails, check environment/installation.
+                                df, meta = pyreadstat.read_xport(str(xpt_file_path))
+                                # -----------------------------------------------------------
 
-                                # Prepare metadata (access meta AFTER it's returned)
+                                # Prepare metadata
                                 column_labels = getattr(meta, 'column_names_to_labels', None)
                                 file_label = getattr(meta, 'file_label', None)
-                                # You could extract more metadata from 'meta' if needed, e.g., formats:
-                                # variable_formats = getattr(meta, 'variable_formats', None)
-                                # Use it in write_sas7bdat if the parameter exists
 
                                 # Write SAS7BDAT file
                                 pyreadstat.write_sas7bdat(
@@ -134,14 +152,20 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                                     str(output_file_path),
                                     column_labels=column_labels,
                                     file_label=file_label
-                                    # Add other relevant metadata parameters if needed and supported
                                 )
 
                                 results_container.success(f"✅ Converted: {xpt_file_path.name} -> {output_filename}")
                                 success_count += 1
 
                             except Exception as e:
-                                results_container.error(f"❌ Error converting {xpt_file_path.name}: {e}")
+                                # Check if the error is specifically the AttributeError for read_xport
+                                if isinstance(e, AttributeError) and 'read_xport' in str(e):
+                                     results_container.error(f"❌ Error converting {xpt_file_path.name}: {e}. "
+                                                             "This indicates 'read_xport' is likely not the correct function name. "
+                                                             "The issue might be the environment, installation, or a naming conflict. "
+                                                             "Try using 'read_xpt' after fixing potential environment problems.")
+                                else:
+                                     results_container.error(f"❌ Error converting {xpt_file_path.name}: {e}")
                                 error_count += 1
                                 error_details.append(f"{xpt_file_path.name}: {e}")
 
@@ -176,7 +200,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
 
                 temp_file_path = None # Initialize path for temp file
                 try:
-                    # Ensure output directory exists (double-check)
+                    # Ensure output directory exists
                     output_path.mkdir(parents=True, exist_ok=True)
 
                     # Prepare output file path
@@ -187,24 +211,23 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                     status_text = st.empty()
                     status_text.text(f"Processing: {uploaded_file.name} -> {output_filename}...")
 
-                    # Save uploaded file to a temporary file because pyreadstat needs a path
+                    # Save uploaded file to a temporary file
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".xpt") as tmp:
-                        tmp.write(uploaded_file.getvalue()) # Write bytes from uploaded file
-                        temp_file_path = tmp.name # Get the path of the temp file
+                        tmp.write(uploaded_file.getvalue())
+                        temp_file_path = tmp.name
 
-                    # Check if temp file was created
                     if not temp_file_path or not os.path.exists(temp_file_path):
                          raise FileNotFoundError("Failed to create temporary file for processing.")
 
-                    # --- CORRECTED READ CALL ---
-                    # Read temporary XPT file (Removed the problematic encoding argument)
-                    df, meta = pyreadstat.read_xpt(temp_file_path)
-                    # --------------------------
+                    # --- MODIFIED READ CALL (using read_xport as requested) ---
+                    # Note: pyreadstat documentation usually specifies read_xpt for XPT files.
+                    # Trying read_xport as requested. If this fails, check environment/installation.
+                    df, meta = pyreadstat.read_xport(temp_file_path)
+                    # -----------------------------------------------------------
 
-                    # Prepare metadata (access meta AFTER it's returned)
+                    # Prepare metadata
                     column_labels = getattr(meta, 'column_names_to_labels', None)
                     file_label = getattr(meta, 'file_label', None)
-                    # variable_formats = getattr(meta, 'variable_formats', None) # Example
 
                     # Write SAS7BDAT file
                     pyreadstat.write_sas7bdat(
@@ -212,43 +235,6 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                         str(output_file_path),
                         column_labels=column_labels,
                         file_label=file_label
-                        # Add other parameters like variable_formats if needed
                     )
-                    status_text.empty() # Clear processing message
-                    st.success(f"✅ Successfully converted **{uploaded_file.name}** to **{output_filename}** in directory `{output_path.resolve()}`")
-
-                except Exception as e:
-                    status_text.empty() # Clear processing message
-                    st.error(f"❌ Error converting {uploaded_file.name}: {e}")
-                finally:
-                    # Clean up the temporary file if it was created
-                    if temp_file_path and os.path.exists(temp_file_path):
-                        try:
-                            os.remove(temp_file_path)
-                        except Exception as e_clean:
-                            # Log or warn if cleanup fails, but don't let it crash the app
-                            st.warning(f"Could not remove temporary file {temp_file_path}: {e_clean}")
-
-# --- Instructions ---
-st.sidebar.divider()
-st.sidebar.markdown("**How to Use:**")
-if conversion_mode == "Convert Directory":
-    st.sidebar.markdown(
-        """
-        1.  Select **Convert Directory** mode above.
-        2.  Enter the full path to the folder containing your `.xpt` files in the **Input Directory Path** field.
-        3.  Enter the full path to the folder where you want the `.sas7bdat` files to be saved in the **Output Directory Path** field. (The folder will be created if it doesn't exist).
-        4.  Click the **Convert File(s)** button.
-        5.  Progress and results will be displayed on the main page.
-        """
-    )
-else: # Convert Single File
-    st.sidebar.markdown(
-        """
-        1.  Select **Convert Single File** mode above.
-        2.  Click **'Browse files'** to upload your single `.xpt` file.
-        3.  Enter the full path to the folder where you want the converted `.sas7bdat` file to be saved in the **Output Directory Path** field. (The folder will be created if it doesn't exist).
-        4.  Click the **Convert File(s)** button.
-        5.  The result will be displayed on the main page.
-        """
-    )
+                    status_text.empty()
+                    st.success(f"✅ Successfully converted **{uploaded_file.name}** to **{output_
