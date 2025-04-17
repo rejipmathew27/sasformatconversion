@@ -24,16 +24,15 @@ if uploaded_file is not None:
     st.write(f"Uploaded file: `{uploaded_file.name}`")
 
     try:
-        with st.spinner("Reading XPT file..."):
+        with st.spinner("Reading XPT file... This might take a moment for large files."):
             datasets = xport.to_dataframe(uploaded_file)
 
-        # Ensure the datasets object has entries
-        if len(datasets) == 0:
+        if not datasets:
             st.error("No datasets found in the uploaded XPT file.")
         else:
             st.success(f"Successfully read XPT file. Found {len(datasets)} dataset(s).")
 
-            # Dataset selection logic
+            # Dataset Selection
             if len(datasets) == 1:
                 selected_key = list(datasets.keys())[0]
             else:
@@ -48,7 +47,7 @@ if uploaded_file is not None:
             if st.checkbox("Show Data Preview (first 5 rows)"):
                 st.dataframe(df.head())
 
-            # --- Convert to SAS7BDAT ---
+            # Convert to SAS7BDAT using pyreadstat
             with st.spinner("Converting to SAS7BDAT format..."):
                 sas_buffer = io.BytesIO()
 
@@ -58,16 +57,17 @@ if uploaded_file is not None:
                     column_labels=df.columns.tolist(),
                     file_label=f"Converted from {uploaded_file.name} - Dataset {selected_key}"
                 )
-
                 sas_buffer.seek(0)
 
             st.success("Conversion successful!")
 
-            # --- Generate filename ---
-            base_name = uploaded_file.name.rsplit('.xpt', 1)[0]
-            output_filename = f"{base_name}_{selected_key.lower()}.sas7bdat" if len(datasets) > 1 else f"{base_name}.sas7bdat"
+            # Prepare output filename
+            base_name = uploaded_file.name.lower().replace(".xpt", "")
+            if len(datasets) > 1:
+                output_filename = f"{base_name}_{selected_key.lower()}.sas7bdat"
+            else:
+                output_filename = f"{base_name}.sas7bdat"
 
-            # --- Download Button ---
             st.download_button(
                 label=f"Download {output_filename}",
                 data=sas_buffer,
@@ -94,10 +94,10 @@ st.markdown("""
 4. Click the 'Download' button to save the converted `.sas7bdat` file.
 
 **Libraries Used:**
-- `streamlit` for the UI
-- `xport` for reading `.xpt` files
-- `pandas` for data handling
-- `pyreadstat` for writing `.sas7bdat` files
+- `streamlit` for the user interface.
+- `xport` for reading `.xpt` files.
+- `pandas` for handling data.
+- `pyreadstat` for writing `.sas7bdat` files.
 """)
 
 st.sidebar.info(
