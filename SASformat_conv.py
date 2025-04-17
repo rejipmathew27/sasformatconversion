@@ -1,76 +1,106 @@
 import streamlit as st
 import os
 import subprocess
-import tempfile
+import zipfile
+from pathlib import Path
+from io import BytesIO
 
-st.title("XPT to SAS7BDAT Converter (via R + haven)")
-st.write("Upload a `.xpt` file and either download or run the generated R script to convert it to `.sas7bdat`.")
+st.title("Batch XPT to SAS7BDAT Converter (R + haven)")
+st.write("""
+Provide a **folder path** on the server that contains `.xpt` files.
+The app will:
+- Convert them to `.sas7bdat` using `haven` in R
+- Let you download converted files
+- Optionally save them in a local folder
+""")
 
-uploaded_file = st.file_uploader("Upload your .xpt file", type=["xpt"])
+folder_path = st.text_input("Enter full path to folder containing .xpt files")
 
-if uploaded_file is not None:
-    # Save uploaded file to temp directory
-    with tempfile.TemporaryDirectory() as tmpdir:
-        xpt_path = os.path.join(tmpdir, uploaded_file.name)
-        with open(xpt_path, "wb") as f:
-            f.write(uploaded_file.read())
+save_output = st.checkbox("Save converted files to server (within session folder)")
 
-        base_filename = os.path.splitext(uploaded_file.name)[0]
-        output_filename = f"{base_filename}.sas7bdat"
-        output_path = os.path.join(tmpdir, output_filename)
-        r_script_path = os.path.join(tmpdir, f"convert_{base_filename}.R")
+if folder_path:
+    input_dir = Path(folder_path)
 
-        # Generate R script content
-        r_script = f"""
-if (!requireNamespace("haven", quietly = TRUE)) {{
-    install.packages("haven", repos = "https://cloud.r-project.org")
-}}
+    if not input_dir.exists() or not input_dir.is_dir():
+        st.error("Provided path does not exist or is not a directory.")
+    else:
+        xpt_files = list(input_dir.glob("*.xpt"))
 
-library(haven)
-data <- read_xpt("{xpt_path.replace(os.sep, '/')}")
-write_sas(data, "{output_path.replace(os.sep, '/')}")
-"""
+        if not xpt_files:
+            st.warning("No .xpt files found in the specified folder.")
+        else:
+            st.success(f"Found {len(xpt_files)} .xpt file(s) in: {folder_path}")
 
-        # Show R script
-        st.subheader("Generated R Script")
-        st.code(r_script, language="r")
+            # Output folder
+            output_dir = input_dir / "converted_sas7bdat"
+            output_dir.mkdir(exist_ok=True)
 
-        # Download R script
-        st.download_button(
-            label="Download R Script",
-            data=r_script,
-            file_name=f"convert_{base_filename}.R",
-            mime="text/plain"
-        )
+            # R script generation
+            r_script_lines = [
+                'if (!requireNamespace("haven", quietly = TRUE)) {',
+                '  install.packages("haven", repos = "https://cloud.r-project.org")',
+                '}',
+                'library(haven)'
+            ]
 
-        # Option to run R script
-        if st.button("Run R Script Now (Requires R Installed)"):
-            with open(r_script_path, "w") as rfile:
-                rfile.write(r_script)
-
-            try:
-                result = subprocess.run(
-                    ["Rscript", r_script_path],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=True
+            for xpt_file in xpt_files:
+                out_file = output_dir / (xpt_file.stem + ".sas7bdat")
+                r_script_lines.append(
+                    f'data <- read_xpt("{xpt_file.as_posix()}")'
                 )
-                st.success("R script executed successfully!")
-                st.text(result.stdout)
+                r_script_lines.append(
+                    f'write_sas(data, "{out_file.as_posix()}")\n'
+                )
 
-                # Download link for .sas7bdat output
-                if os.path.exists(output_path):
-                    with open(output_path, "rb") as out_file:
+            r_script = "\n".join(r_script_lines)
+
+            st.subheader("Generated R Script")
+            st.code(r_script, language="r")
+
+            if st.button("Run Conversion in R"):
+                r_script_path = input_dir / "convert_all.R"
+                r_script_path.write_text(r_script)
+
+                try:
+                    result = subprocess.run(
+                        ["Rscript", str(r_script_path)],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        check=True
+                    )
+                    st.success("Conversion completed!")
+                    st.text(result.stdout)
+
+                    converted_files = list(output_dir.glob("*.sas7bdat"))
+
+                    if converted_files:
+                        st.subheader("Download Converted Files")
+
+                        for file in converted_files:
+                            with open(file, "rb") as f:
+                                st.download_button(
+                                    label=f"Download {file.name}",
+                                    data=f.read(),
+                                    file_name=file.name,
+                                    mime="application/octet-stream"
+                                )
+
+                        # Zip option
+                        zip_buffer = BytesIO()
+                        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+                            for file in converted_files:
+                                zipf.write(file, arcname=file.name)
                         st.download_button(
-                            label="Download Converted .sas7bdat File",
-                            data=out_file,
-                            file_name=output_filename,
-                            mime="application/octet-stream"
+                            "Download All as ZIP",
+                            data=zip_buffer.getvalue(),
+                            file_name="converted_sas7bdat_files.zip",
+                            mime="application/zip"
                         )
-                else:
-                    st.warning("Conversion complete, but output file not found.")
 
-            except subprocess.CalledProcessError as e:
-                st.error("Error occurred while running the R script:")
-                st.code(e.stderr)
+                        if save_output:
+                            st.success(f"Files saved to: {output_dir}")
+
+                except subprocess.CalledProcessError as e:
+                    st.error("Error while executing R script:")
+                    st.code(e.stderr)
