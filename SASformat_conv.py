@@ -15,7 +15,8 @@ st.write("""
     or upload and convert a single `.xpt` file.
 """)
 # Display current date using pandas for consistent formatting
-st.write(f"*(Current Date: {pd.Timestamp.now().strftime('%Y-%m-%d')})*")
+current_date = pd.Timestamp.now().strftime('%Y-%m-%d')
+st.write(f"*(Current Date: {current_date})*")
 
 # --- Debugging Info (Keep this for troubleshooting if needed) ---
 st.sidebar.subheader("Debug Info")
@@ -237,4 +238,51 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                         file_label=file_label
                     )
                     status_text.empty()
-                    st.success(f"✅ Successfully converted **{uploaded_file.name}** to **{output_
+
+                    # --- Line referenced in previous SyntaxError ---
+                    # Ensure this line is copied/typed correctly in your file.
+                    st.success(f"✅ Successfully converted **{uploaded_file.name}** to **{output_filename}** in directory `{output_path.resolve()}`")
+                    # -------------------------------------------------
+
+                except Exception as e:
+                    status_text.empty()
+                    # Check if the error is specifically the AttributeError for read_xport
+                    if isinstance(e, AttributeError) and 'read_xport' in str(e):
+                         st.error(f"❌ Error converting {uploaded_file.name}: {e}. "
+                                  "This indicates 'read_xport' is likely not the correct function name. "
+                                  "The issue might be the environment, installation, or a naming conflict. "
+                                  "Try using 'read_xpt' after fixing potential environment problems.")
+                    else:
+                         st.error(f"❌ Error converting {uploaded_file.name}: {e}")
+                finally:
+                    # Clean up the temporary file
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        try:
+                            os.remove(temp_file_path)
+                        except Exception as e_clean:
+                            st.warning(f"Could not remove temporary file {temp_file_path}: {e_clean}")
+
+# --- Instructions ---
+st.sidebar.divider()
+st.sidebar.markdown("**How to Use:**")
+# (Instructions remain the same as before)
+if conversion_mode == "Convert Directory":
+    st.sidebar.markdown(
+        """
+        1.  Select **Convert Directory** mode above.
+        2.  Enter the full path to the folder containing your `.xpt` files in the **Input Directory Path** field.
+        3.  Enter the full path to the folder where you want the `.sas7bdat` files to be saved in the **Output Directory Path** field. (The folder will be created if it doesn't exist).
+        4.  Click the **Convert File(s)** button.
+        5.  Progress and results will be displayed on the main page.
+        """
+    )
+else: # Convert Single File
+    st.sidebar.markdown(
+        """
+        1.  Select **Convert Single File** mode above.
+        2.  Click **'Browse files'** to upload your single `.xpt` file.
+        3.  Enter the full path to the folder where you want the converted `.sas7bdat` file to be saved in the **Output Directory Path** field. (The folder will be created if it doesn't exist).
+        4.  Click the **Convert File(s)** button.
+        5.  The result will be displayed on the main page.
+        """
+    )
