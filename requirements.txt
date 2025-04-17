@@ -1,5 +1,5 @@
 streamlit
 pandas
-pyreadstat>=1.2.8
+pyreadstat>=1.2.7
 xport
 setuptools
