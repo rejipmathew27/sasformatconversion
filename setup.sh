@@ -17,5 +17,15 @@ Rscript install_packages.R
 
 echo "R package installation script finished."
 
+# --- Install rpy2 using pip AFTER R is installed ---
+# Now that R and its packages (like haven) should be installed,
+# we can install the Python package rpy2 which depends on finding R.
+
+echo "Installing rpy2 using pip..."
+pip install rpy2
+
+echo "rpy2 installation finished."
+
+
 # --- Add any other setup commands below if needed ---
 
