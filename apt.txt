@@ -1,0 +1,8 @@
+# Base R installation
+r-base
+# R development files (often needed for rpy2 and compiling R packages)
+r-base-dev
+# Common dependencies for R packages (networking, XML handling, security)
+libcurl4-openssl-dev
+libssl-dev
+libxml2-dev
