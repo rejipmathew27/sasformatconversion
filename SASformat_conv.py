@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 import tempfile # Required for handling single uploaded file
 
+# --- Page Configuration ---
 st.set_page_config(layout="wide")
 st.title("SAS XPT to SAS7BDAT Converter")
 st.write("""
@@ -12,6 +13,7 @@ st.write("""
     You can either convert all `.xpt` files within a specified directory
     or upload and convert a single `.xpt` file.
 """)
+st.write(f"*(Current Date: {pd.Timestamp.now().strftime('%Y-%m-%d')})*") # Add current date info
 
 # --- Sidebar Configuration ---
 st.sidebar.header("Configuration")
@@ -90,10 +92,9 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                  # --- Run Directory Conversion Logic ---
                  st.subheader(f"Converting Directory: {input_path.resolve()}")
                  try:
-                    # Find all .xpt files (case-insensitive search)
-                    # Using glob with patterns to be more robust across OS
+                    # Find all .xpt files (case-insensitive search using glob)
                     xpt_files = list(input_path.glob('[!.]*[xX][pP][tT]'))
-                    # Filter out hidden files (starting with '.') just in case glob includes them
+                    # Filter out hidden files (starting with '.') just in case
 
                     if not xpt_files:
                         st.warning(f"⚠️ No `.xpt` files found in the input directory: {input_path.resolve()}")
@@ -115,15 +116,17 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                             status_text.text(f"Processing ({i+1}/{len(xpt_files)}): {xpt_file_path.name} -> {output_filename}...")
 
                             try:
-                                # Read XPT file
-                                df, meta = pyreadstat.read_xpt(
-                                    str(xpt_file_path),
-                                    encoding=getattr(meta, 'file_encoding', 'utf-8') # Safely get encoding
-                                )
+                                # --- CORRECTED READ CALL ---
+                                # Read XPT file (Removed the problematic encoding argument)
+                                df, meta = pyreadstat.read_xpt(str(xpt_file_path))
+                                # --------------------------
 
-                                # Prepare metadata
+                                # Prepare metadata (access meta AFTER it's returned)
                                 column_labels = getattr(meta, 'column_names_to_labels', None)
                                 file_label = getattr(meta, 'file_label', None)
+                                # You could extract more metadata from 'meta' if needed, e.g., formats:
+                                # variable_formats = getattr(meta, 'variable_formats', None)
+                                # Use it in write_sas7bdat if the parameter exists
 
                                 # Write SAS7BDAT file
                                 pyreadstat.write_sas7bdat(
@@ -131,6 +134,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                                     str(output_file_path),
                                     column_labels=column_labels,
                                     file_label=file_label
+                                    # Add other relevant metadata parameters if needed and supported
                                 )
 
                                 results_container.success(f"✅ Converted: {xpt_file_path.name} -> {output_filename}")
@@ -158,7 +162,6 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                            if success_count > 0:
                                st.info("No errors encountered during conversion.")
 
-
                  except Exception as e:
                     st.error(f"❌ An unexpected error occurred during the directory conversion process: {e}")
 
@@ -173,7 +176,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
 
                 temp_file_path = None # Initialize path for temp file
                 try:
-                    # Ensure output directory exists (double-check, though validated earlier)
+                    # Ensure output directory exists (double-check)
                     output_path.mkdir(parents=True, exist_ok=True)
 
                     # Prepare output file path
@@ -193,15 +196,15 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                     if not temp_file_path or not os.path.exists(temp_file_path):
                          raise FileNotFoundError("Failed to create temporary file for processing.")
 
-                    # Read temporary XPT file
-                    df, meta = pyreadstat.read_xpt(
-                        temp_file_path,
-                        encoding=getattr(meta, 'file_encoding', 'utf-8')
-                    )
+                    # --- CORRECTED READ CALL ---
+                    # Read temporary XPT file (Removed the problematic encoding argument)
+                    df, meta = pyreadstat.read_xpt(temp_file_path)
+                    # --------------------------
 
-                    # Prepare metadata
+                    # Prepare metadata (access meta AFTER it's returned)
                     column_labels = getattr(meta, 'column_names_to_labels', None)
                     file_label = getattr(meta, 'file_label', None)
+                    # variable_formats = getattr(meta, 'variable_formats', None) # Example
 
                     # Write SAS7BDAT file
                     pyreadstat.write_sas7bdat(
@@ -209,6 +212,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                         str(output_file_path),
                         column_labels=column_labels,
                         file_label=file_label
+                        # Add other parameters like variable_formats if needed
                     )
                     status_text.empty() # Clear processing message
                     st.success(f"✅ Successfully converted **{uploaded_file.name}** to **{output_filename}** in directory `{output_path.resolve()}`")
