@@ -25,9 +25,11 @@ st.sidebar.write(f"Python Version: `{sys.version}`")
 try:
     st.sidebar.write(f"Pyreadstat Version: `{pyreadstat.__version__}`")
     st.sidebar.write(f"Pyreadstat Location: `{pyreadstat.__file__}`")
-    # Check for both attributes for comparison during debugging
+    # Check for relevant attributes for comparison during debugging
     st.sidebar.write(f"Has 'read_xpt' attr: `{hasattr(pyreadstat, 'read_xpt')}`")
     st.sidebar.write(f"Has 'read_xport' attr: `{hasattr(pyreadstat, 'read_xport')}`")
+    st.sidebar.write(f"Has 'write_sas7bdat' attr: `{hasattr(pyreadstat, 'write_sas7bdat')}`")
+    st.sidebar.write(f"Has 'write_sas7dat' attr: `{hasattr(pyreadstat, 'write_sas7dat')}`") # Check requested name
 except ImportError:
     st.sidebar.error("Could not import pyreadstat inside Streamlit.")
 except AttributeError as e:
@@ -131,42 +133,44 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
 
                         for i, xpt_file_path in enumerate(xpt_files):
                             base_filename = xpt_file_path.stem
-                            output_filename = f"{base_filename}.sas7bdat"
+                            output_filename = f"{base_filename}.sas7bdat" # Output is still .sas7bdat
                             output_file_path = output_path / output_filename
 
                             status_text.text(f"Processing ({i+1}/{len(xpt_files)}): {xpt_file_path.name} -> {output_filename}...")
 
                             try:
-                                # --- MODIFIED READ CALL (using read_xport as requested) ---
-                                # Note: pyreadstat documentation usually specifies read_xpt for XPT files.
-                                # Trying read_xport as requested. If this fails, check environment/installation.
+                                # Using read_xport as previously requested
                                 df, meta = pyreadstat.read_xport(str(xpt_file_path))
-                                # -----------------------------------------------------------
 
                                 # Prepare metadata
                                 column_labels = getattr(meta, 'column_names_to_labels', None)
                                 file_label = getattr(meta, 'file_label', None)
 
-                                # Write SAS7BDAT file
-                                pyreadstat.write_sas7bdat(
+                                # --- MODIFIED WRITE CALL (using write_sas7dat as requested) ---
+                                # WARNING: pyreadstat documentation specifies write_sas7bdat for SAS7BDAT files.
+                                # Using write_sas7dat as requested. This will likely cause an AttributeError.
+                                pyreadstat.write_sas7dat(
                                     df,
                                     str(output_file_path),
                                     column_labels=column_labels,
                                     file_label=file_label
                                 )
+                                # --------------------------------------------------------------
 
                                 results_container.success(f"✅ Converted: {xpt_file_path.name} -> {output_filename}")
                                 success_count += 1
 
                             except Exception as e:
-                                # Check if the error is specifically the AttributeError for read_xport
-                                if isinstance(e, AttributeError) and 'read_xport' in str(e):
-                                     results_container.error(f"❌ Error converting {xpt_file_path.name}: {e}. "
-                                                             "This indicates 'read_xport' is likely not the correct function name. "
-                                                             "The issue might be the environment, installation, or a naming conflict. "
-                                                             "Try using 'read_xpt' after fixing potential environment problems.")
-                                else:
-                                     results_container.error(f"❌ Error converting {xpt_file_path.name}: {e}")
+                                # Check if the error is specifically the AttributeError for read_xport or write_sas7dat
+                                error_msg = f"❌ Error converting {xpt_file_path.name}: {e}."
+                                if isinstance(e, AttributeError):
+                                    if 'read_xport' in str(e):
+                                        error_msg += (" This indicates 'read_xport' is likely not the correct function name."
+                                                      " Try 'read_xpt' after fixing potential environment problems.")
+                                    elif 'write_sas7dat' in str(e):
+                                         error_msg += (" This indicates 'write_sas7dat' is likely not the correct function name."
+                                                       " The documented function is 'write_sas7bdat'.")
+                                results_container.error(error_msg)
                                 error_count += 1
                                 error_details.append(f"{xpt_file_path.name}: {e}")
 
@@ -206,7 +210,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
 
                     # Prepare output file path
                     base_filename = Path(uploaded_file.name).stem
-                    output_filename = f"{base_filename}.sas7bdat"
+                    output_filename = f"{base_filename}.sas7bdat" # Output is still .sas7bdat
                     output_file_path = output_path / output_filename
 
                     status_text = st.empty()
@@ -220,40 +224,40 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                     if not temp_file_path or not os.path.exists(temp_file_path):
                          raise FileNotFoundError("Failed to create temporary file for processing.")
 
-                    # --- MODIFIED READ CALL (using read_xport as requested) ---
-                    # Note: pyreadstat documentation usually specifies read_xpt for XPT files.
-                    # Trying read_xport as requested. If this fails, check environment/installation.
+                    # Using read_xport as previously requested
                     df, meta = pyreadstat.read_xport(temp_file_path)
-                    # -----------------------------------------------------------
 
                     # Prepare metadata
                     column_labels = getattr(meta, 'column_names_to_labels', None)
                     file_label = getattr(meta, 'file_label', None)
 
-                    # Write SAS7BDAT file
-                    pyreadstat.write_sas7bdat(
+                    # --- MODIFIED WRITE CALL (using write_sas7dat as requested) ---
+                    # WARNING: pyreadstat documentation specifies write_sas7bdat for SAS7BDAT files.
+                    # Using write_sas7dat as requested. This will likely cause an AttributeError.
+                    pyreadstat.write_sas7dat(
                         df,
                         str(output_file_path),
                         column_labels=column_labels,
                         file_label=file_label
                     )
-                    status_text.empty()
+                    # --------------------------------------------------------------
 
-                    # --- Line referenced in previous SyntaxError ---
+                    status_text.empty()
                     # Ensure this line is copied/typed correctly in your file.
                     st.success(f"✅ Successfully converted **{uploaded_file.name}** to **{output_filename}** in directory `{output_path.resolve()}`")
-                    # -------------------------------------------------
 
                 except Exception as e:
                     status_text.empty()
-                    # Check if the error is specifically the AttributeError for read_xport
-                    if isinstance(e, AttributeError) and 'read_xport' in str(e):
-                         st.error(f"❌ Error converting {uploaded_file.name}: {e}. "
-                                  "This indicates 'read_xport' is likely not the correct function name. "
-                                  "The issue might be the environment, installation, or a naming conflict. "
-                                  "Try using 'read_xpt' after fixing potential environment problems.")
-                    else:
-                         st.error(f"❌ Error converting {uploaded_file.name}: {e}")
+                    # Check if the error is specifically the AttributeError for read_xport or write_sas7dat
+                    error_msg = f"❌ Error converting {uploaded_file.name}: {e}."
+                    if isinstance(e, AttributeError):
+                        if 'read_xport' in str(e):
+                             error_msg += (" This indicates 'read_xport' is likely not the correct function name."
+                                           " Try 'read_xpt' after fixing potential environment problems.")
+                        elif 'write_sas7dat' in str(e):
+                             error_msg += (" This indicates 'write_sas7dat' is likely not the correct function name."
+                                           " The documented function is 'write_sas7bdat'.")
+                    st.error(error_msg)
                 finally:
                     # Clean up the temporary file
                     if temp_file_path and os.path.exists(temp_file_path):
@@ -286,3 +290,14 @@ else: # Convert Single File
         5.  The result will be displayed on the main page.
         """
     )
+
+```
+
+**Changes Made:**
+
+1.  Replaced `pyreadstat.write_sas7bdat(` with `pyreadstat.write_sas7dat(` in both the directory conversion loop and the single file conversion logic.
+2.  Added comments warning that this change is likely incorrect and will probably cause an error.
+3.  Updated the `except` blocks to specifically check for an `AttributeError` related to `write_sas7dat` and provide a more informative message if it occurs.
+4.  Updated the debug info check in the sidebar to also report if `write_sas7dat` exists as an attribute.
+
+Again, if this version fails with an error related to `write_sas7dat`, the correct solution is almost certainly to change it back to `write_sas7bdat` and troubleshoot any remaining environment or installation issu
