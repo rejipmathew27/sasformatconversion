@@ -102,7 +102,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                                     column_labels = getattr(meta, 'column_names_to_labels', None)
                                     file_label = getattr(meta, 'file_label', None)
 
-                                    pyreadstat.write_sas7bdat(
+                                    pyreadstat.write_sas7dat(
                                         df,
                                         str(output_file),
                                         column_labels=column_labels,
@@ -145,7 +145,7 @@ if st.sidebar.button("Convert File(s)", key="convert_button"):
                     file_label = getattr(meta, 'file_label', None)
 
                     output_file = output_path / f"{Path(uploaded_file.name).stem}.sas7bdat"
-                    pyreadstat.write_sas7bdat(
+                    pyreadstat.write_sas7dat(
                         df,
                         str(output_file),
                         column_labels=column_labels,
