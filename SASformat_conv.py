@@ -8,7 +8,7 @@ import pandas as pd
 import tempfile
 
 st.set_page_config(page_title="XPT to SAS7BDAT Converter", layout="centered")
-st.title("📦 XPT to SAS7BDAT Converter (via R + haven)")
+st.title("📦 SAS XPT to SAS7BDAT Converter")
 
 st.write("""
 This app converts `.xpt` files to `.sas7bdat` using R and the **haven** package.
