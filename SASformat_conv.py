@@ -4,19 +4,18 @@ import subprocess
 import zipfile
 from pathlib import Path
 from io import BytesIO
+import pandas as pd
 
 st.title("Batch XPT to SAS7BDAT Converter (R + haven)")
 st.write("""
-Provide a **folder path** on the server that contains `.xpt` files.
-The app will:
-- Convert them to `.sas7bdat` using `haven` in R
-- Let you download converted files
-- Optionally save them in a local folder
+Enter a folder path containing `.xpt` files. The app will:
+- List the `.xpt` files found
+- Convert all of them using R + haven
+- Let you download the converted `.sas7bdat` files
 """)
 
 folder_path = st.text_input("Enter full path to folder containing .xpt files")
-
-save_output = st.checkbox("Save converted files to server (within session folder)")
+save_output = st.checkbox("Save converted files to server (in session folder)")
 
 if folder_path:
     input_dir = Path(folder_path)
@@ -24,12 +23,16 @@ if folder_path:
     if not input_dir.exists() or not input_dir.is_dir():
         st.error("Provided path does not exist or is not a directory.")
     else:
-        xpt_files = list(input_dir.glob("*.xpt"))
+        xpt_files = sorted(list(input_dir.glob("*.xpt")))
 
         if not xpt_files:
             st.warning("No .xpt files found in the specified folder.")
         else:
-            st.success(f"Found {len(xpt_files)} .xpt file(s) in: {folder_path}")
+            st.success(f"Found {len(xpt_files)} .xpt file(s) in: `{folder_path}`")
+
+            # Show file names
+            file_data = [{"File Name": f.name, "Size (KB)": round(f.stat().st_size / 1024, 2)} for f in xpt_files]
+            st.dataframe(pd.DataFrame(file_data))
 
             # Output folder
             output_dir = input_dir / "converted_sas7bdat"
@@ -86,7 +89,7 @@ if folder_path:
                                     mime="application/octet-stream"
                                 )
 
-                        # Zip option
+                        # Zip all files
                         zip_buffer = BytesIO()
                         with zipfile.ZipFile(zip_buffer, "w") as zipf:
                             for file in converted_files:
