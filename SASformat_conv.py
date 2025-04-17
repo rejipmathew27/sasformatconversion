@@ -1,6 +1,6 @@
 import streamlit as st
 import rpy2.robjects as robjects
-from rpy2.robjects.packages import importr, isinstalled
+from rpy2.robjects.packages import importr # Only import 'importr' initially
 import rpy2.rinterface_lib.callbacks
 import logging
 import os
@@ -11,28 +11,6 @@ import tempfile
 logging.basicConfig(level=logging.INFO)
 rpy2.rinterface_lib.callbacks.consolewrite_print = lambda s: logging.info(f"R Console: {s}")
 rpy2.rinterface_lib.callbacks.consolewrite_warnerror = lambda s: logging.error(f"R Error/Warning: {s}")
-
-# --- R Setup ---
-try:
-    # Check if 'haven' package is installed in R
-    if not isinstalled('haven'):
-        st.warning("R package 'haven' is not installed. Attempting to install...")
-        # Import the 'utils' package for installation
-        utils = importr('utils')
-        # Choose a CRAN mirror (0 corresponds to the Cloud mirror)
-        utils.chooseCRANmirror(ind=0)
-        # Install 'haven'
-        utils.install_packages('haven')
-        st.success("Successfully installed 'haven'. Please refresh the page if needed.")
-
-    # Import the 'haven' package
-    haven = importr('haven')
-    st.sidebar.success("R 'haven' package loaded successfully.")
-
-except Exception as e:
-    st.error(f"Error setting up R environment or loading/installing 'haven': {e}")
-    st.error("Please ensure R is installed and accessible by rpy2, and that you have permissions to install R packages if needed.")
-    st.stop() # Stop execution if R setup fails
 
 # --- Streamlit App UI ---
 st.title("XPT to SAS7BDAT Converter")
@@ -45,6 +23,26 @@ convert_button = st.button("Convert File")
 
 # --- Conversion Logic ---
 if convert_button and uploaded_file is not None and output_filename_base:
+    # --- Initialize R interface and import haven *inside* the button logic ---
+    try:
+        st.info("Initializing R interface and loading 'haven' package...")
+        # Check R version as a simple test
+        r_version = robjects.r('R.version.string')
+        st.info(f"R Version: {r_version[0]}")
+
+        # Import the 'haven' package *here*
+        haven = importr('haven')
+        st.sidebar.success("R 'haven' package loaded successfully for this conversion.") # Moved sidebar message here
+
+    except Exception as e_r_setup:
+        st.error(f"Error setting up R environment or loading 'haven': {e_r_setup}")
+        st.error("Please ensure R is installed and accessible by rpy2. Check deployment logs if issues persist.")
+        st.stop() # Stop execution if R setup fails here
+
+    # --- Proceed with file handling and conversion ---
+    temp_xpt_path = None
+    temp_dir = None
+    output_sas_path = None
     try:
         # Create temporary files safely
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xpt") as temp_xpt:
@@ -61,13 +59,20 @@ if convert_button and uploaded_file is not None and output_filename_base:
 
         # --- R Conversion using rpy2 ---
         try:
+            # Ensure paths use forward slashes for R
+            r_temp_xpt_path = temp_xpt_path.replace('\\', '/')
+            r_output_sas_path = output_sas_path.replace('\\', '/')
+
             # Read the .xpt file using haven::read_xpt
-            r_code_read = f"data <- haven::read_xpt('{temp_xpt_path.replace('\\', '/')}')" # Ensure forward slashes for R paths
+            # Use the 'haven' object imported above
+            st.info("Calling R: haven::read_xpt...")
+            r_code_read = f"data <- haven::read_xpt('{r_temp_xpt_path}')"
             robjects.r(r_code_read)
             st.success("Successfully read XPT file into R.")
 
             # Write the data to .sas7bdat using haven::write_sas
-            r_code_write = f"haven::write_sas(data, '{output_sas_path.replace('\\', '/')}')" # Ensure forward slashes
+            st.info("Calling R: haven::write_sas...")
+            r_code_write = f"haven::write_sas(data, '{r_output_sas_path}')"
             robjects.r(r_code_write)
             st.success(f"Successfully wrote SAS7BDAT file: {output_filename_base}.sas7bdat")
 
@@ -96,21 +101,22 @@ if convert_button and uploaded_file is not None and output_filename_base:
 
     finally:
         # --- Cleanup Temporary Files ---
-        if 'temp_xpt_path' in locals() and os.path.exists(temp_xpt_path):
+        # Use the paths defined within the main try block
+        if temp_xpt_path and os.path.exists(temp_xpt_path):
             try:
                 os.remove(temp_xpt_path)
-                # st.info(f"Cleaned up temporary XPT file: {temp_xpt_path}") # Optional: for debugging
             except Exception as e_clean_xpt:
                 st.warning(f"Could not remove temporary XPT file {temp_xpt_path}: {e_clean_xpt}")
 
-        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+        if output_sas_path and os.path.exists(output_sas_path):
+             try:
+                os.remove(output_sas_path)
+             except Exception as e_clean_sas:
+                st.warning(f"Could not remove temporary SAS file {output_sas_path}: {e_clean_sas}")
+
+        if temp_dir and os.path.exists(temp_dir):
             try:
-                # Remove the generated SAS file first
-                if 'output_sas_path' in locals() and os.path.exists(output_sas_path):
-                    os.remove(output_sas_path)
-                # Then remove the temporary directory
                 os.rmdir(temp_dir)
-                # st.info(f"Cleaned up temporary directory: {temp_dir}") # Optional: for debugging
             except Exception as e_clean_dir:
                 st.warning(f"Could not remove temporary directory {temp_dir}: {e_clean_dir}")
 
@@ -128,8 +134,6 @@ st.sidebar.markdown("""
 st.sidebar.markdown("---")
 st.sidebar.header("Notes")
 st.sidebar.markdown("""
-* This app requires R to be installed on the system where Streamlit is running.
-* `rpy2` must be configured correctly to find your R installation.
-* The R package `haven` is required. The script attempts to install it if missing, but this might require specific permissions or network access depending on your environment.
-* Running this on platforms like Streamlit Community Cloud requires specifying R and its packages in the deployment configuration (e.g., using a `packages.txt` file for R packages).
+* R and required packages should be installed via `apt.txt` and `setup.sh`/`install_packages.R` for deployment.
+* `rpy2` interacts with R; runtime errors can occur if the R environment has issues.
 """)
