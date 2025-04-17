@@ -1,178 +1,135 @@
-
-
-
-import streamlit as st 
-import pandas as pd
-import pyreadstat
-from pathlib import Path
+import streamlit as st
+import rpy2.robjects as robjects
+from rpy2.robjects.packages import importr, isinstalled
+import rpy2.rinterface_lib.callbacks
+import logging
 import os
 import tempfile
-import sys
 
-# --- Page Configuration ---
-st.set_page_config(layout="wide")
-st.title("SAS XPT to SAS7BDAT Converter")
-st.write("""
-Convert SAS XPT transport files (`.xpt`) to SAS7BDAT dataset files (`.sas7bdat`).
-You can either convert all `.xpt` files within a specified directory
-or upload and convert a single `.xpt` file.
-""")
+# Configure R's output to be captured by Python's logging
+# This helps in debugging R errors within the Streamlit environment
+logging.basicConfig(level=logging.INFO)
+rpy2.rinterface_lib.callbacks.consolewrite_print = lambda s: logging.info(f"R Console: {s}")
+rpy2.rinterface_lib.callbacks.consolewrite_warnerror = lambda s: logging.error(f"R Error/Warning: {s}")
 
-current_date = pd.Timestamp.now().strftime('%Y-%m-%d')
-st.write(f"*(Current Date: {current_date})*")
-
-# --- Debug Info ---
-st.sidebar.subheader("Debug Info")
-st.sidebar.write(f"Python Executable: `{sys.executable}`")
-st.sidebar.write(f"Python Version: `{sys.version}`")
+# --- R Setup ---
 try:
-    st.sidebar.write(f"Pyreadstat Version: `{pyreadstat.__version__}`")
-    st.sidebar.write(f"Pyreadstat Location: `{pyreadstat.__file__}`")
-    st.sidebar.write(f"Has 'read_xpt': `{hasattr(pyreadstat, 'read_xpt')}`")
-    st.sidebar.write(f"Has 'read_xport': `{hasattr(pyreadstat, 'read_xport')}`")
-    st.sidebar.write(f"Has 'write_sas7dat': `{hasattr(pyreadstat, 'write_sas7dat')}`")
+    # Check if 'haven' package is installed in R
+    if not isinstalled('haven'):
+        st.warning("R package 'haven' is not installed. Attempting to install...")
+        # Import the 'utils' package for installation
+        utils = importr('utils')
+        # Choose a CRAN mirror (0 corresponds to the Cloud mirror)
+        utils.chooseCRANmirror(ind=0)
+        # Install 'haven'
+        utils.install_packages('haven')
+        st.success("Successfully installed 'haven'. Please refresh the page if needed.")
+
+    # Import the 'haven' package
+    haven = importr('haven')
+    st.sidebar.success("R 'haven' package loaded successfully.")
+
 except Exception as e:
-    st.sidebar.error(f"Error fetching pyreadstat debug info: {e}")
+    st.error(f"Error setting up R environment or loading/installing 'haven': {e}")
+    st.error("Please ensure R is installed and accessible by rpy2, and that you have permissions to install R packages if needed.")
+    st.stop() # Stop execution if R setup fails
 
-# --- Sidebar Settings ---
-st.sidebar.header("Configuration")
-conversion_mode = st.sidebar.radio(
-    "Select Conversion Mode:",
-    ("Convert Directory", "Convert Single File"),
-    key="mode"
-)
+# --- Streamlit App UI ---
+st.title("XPT to SAS7BDAT Converter")
+st.write("Upload a SAS Transport file (.xpt) and convert it to a SAS Data Set file (.sas7bdat) using the R 'haven' package.")
 
-input_dir_str = ""
-output_dir_str = ""
-uploaded_file = None
+uploaded_file = st.file_uploader("Choose an .xpt file", type="xpt")
+output_filename_base = st.text_input("Enter desired output filename (without extension)", "output_data")
 
-if conversion_mode == "Convert Directory":
-    st.sidebar.subheader("Directory Conversion Settings")
-    input_dir_str = st.sidebar.text_input("Input Directory Path:", placeholder="/path/to/xpt_files")
-    output_dir_str = st.sidebar.text_input("Output Directory Path:", placeholder="/path/to/output")
-else:
-    st.sidebar.subheader("Single File Conversion Settings")
-    uploaded_file = st.sidebar.file_uploader("Choose an XPT file", type=['xpt', 'XPT'])
-    output_dir_str = st.sidebar.text_input("Output Directory Path:", placeholder="/path/to/output")
+convert_button = st.button("Convert File")
 
-# --- Conversion Button ---
-st.sidebar.divider()
-if st.sidebar.button("Convert File(s)", key="convert_button"):
+# --- Conversion Logic ---
+if convert_button and uploaded_file is not None and output_filename_base:
+    try:
+        # Create temporary files safely
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xpt") as temp_xpt:
+            temp_xpt.write(uploaded_file.getvalue())
+            temp_xpt_path = temp_xpt.name
 
-    # Validate output directory
-    if not output_dir_str:
-        st.error("⚠️ Please provide the Output Directory Path.")
-    else:
+        # Define the output path in a temporary directory as well
+        temp_dir = tempfile.mkdtemp()
+        output_sas_path = os.path.join(temp_dir, f"{output_filename_base}.sas7bdat")
+
+        st.info(f"Reading XPT file: {uploaded_file.name}")
+        st.info(f"Temporary XPT path: {temp_xpt_path}")
+        st.info(f"Output SAS path: {output_sas_path}")
+
+        # --- R Conversion using rpy2 ---
         try:
-            output_path = Path(output_dir_str)
-            output_path.mkdir(parents=True, exist_ok=True)
-            st.info(f"Output directory: `{output_path.resolve()}`")
-        except Exception as e:
-            st.error(f"❌ Invalid Output Directory Path: {e}")
-            output_path = None
+            # Read the .xpt file using haven::read_xpt
+            r_code_read = f"data <- haven::read_xpt('{temp_xpt_path.replace('\\', '/')}')" # Ensure forward slashes for R paths
+            robjects.r(r_code_read)
+            st.success("Successfully read XPT file into R.")
 
-    if output_path:
-        if conversion_mode == "Convert Directory":
-            if not input_dir_str:
-                st.error("⚠️ Please provide the Input Directory Path.")
-            else:
-                input_path = Path(input_dir_str)
-                if not input_path.is_dir():
-                    st.error("❌ Provided input path is not a valid directory.")
-                else:
-                    st.subheader(f"Converting Directory: {input_path.resolve()}")
-                    try:
-                        xpt_files = list(input_path.glob('[!.]*.[xX][pP][tT]'))
-                        if not xpt_files:
-                            st.warning("⚠️ No `.xpt` files found.")
-                        else:
-                            st.write(f"Found {len(xpt_files)} `.xpt` file(s).")
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            success_count, error_count = 0, 0
-                            error_details = []
+            # Write the data to .sas7bdat using haven::write_sas
+            r_code_write = f"haven::write_sas(data, '{output_sas_path.replace('\\', '/')}')" # Ensure forward slashes
+            robjects.r(r_code_write)
+            st.success(f"Successfully wrote SAS7BDAT file: {output_filename_base}.sas7bdat")
 
-                            for i, xpt_file in enumerate(xpt_files):
-                                base_name = xpt_file.stem
-                                output_file = output_path / f"{base_name}.sas7bdat"
-                                status_text.text(f"Processing {xpt_file.name}...")
+            # --- Provide Download Link ---
+            with open(output_sas_path, "rb") as f:
+                st.download_button(
+                    label=f"Download {output_filename_base}.sas7bdat",
+                    data=f,
+                    file_name=f"{output_filename_base}.sas7bdat",
+                    mime="application/octet-stream" # A generic binary mime type
+                )
 
-                                try:
-                                    df, meta = pyreadstat.read_xport(str(xpt_file))
-                                    column_labels = getattr(meta, 'column_names_to_labels', None)
-                                    file_label = getattr(meta, 'file_label', None)
+        except Exception as r_error:
+            st.error(f"Error during R processing: {r_error}")
+            # Attempt to capture more detailed R error messages if possible
+            try:
+                # Get the last R error message
+                get_last_error = robjects.r('geterrmessage()')
+                st.error(f"Last R error message: {get_last_error[0]}")
+            except Exception as e_r_err:
+                st.warning(f"Could not retrieve specific R error message: {e_r_err}")
 
-                                    pyreadstat.write_sas7dat(
-                                        df,
-                                        str(output_file),
-                                        column_labels=column_labels,
-                                        file_label=file_label
-                                    )
-                                    st.success(f"✅ {xpt_file.name} converted.")
-                                    success_count += 1
-                                except Exception as e:
-                                    st.error(f"❌ Failed to convert {xpt_file.name}: {e}")
-                                    error_count += 1
-                                    error_details.append(f"{xpt_file.name}: {e}")
 
-                                progress_bar.progress((i + 1) / len(xpt_files))
+    except Exception as e:
+        st.error(f"An error occurred during file handling or conversion: {e}")
 
-                            status_text.text("✅ Conversion complete.")
-                            st.divider()
-                            st.subheader("Summary")
-                            st.success(f"Converted: {success_count}")
-                            if error_count:
-                                st.error(f"Errors: {error_count}")
-                                with st.expander("Error Details"):
-                                    for detail in error_details:
-                                        st.code(detail)
+    finally:
+        # --- Cleanup Temporary Files ---
+        if 'temp_xpt_path' in locals() and os.path.exists(temp_xpt_path):
+            try:
+                os.remove(temp_xpt_path)
+                # st.info(f"Cleaned up temporary XPT file: {temp_xpt_path}") # Optional: for debugging
+            except Exception as e_clean_xpt:
+                st.warning(f"Could not remove temporary XPT file {temp_xpt_path}: {e_clean_xpt}")
 
-                    except Exception as e:
-                        st.error(f"❌ Error during directory conversion: {e}")
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            try:
+                # Remove the generated SAS file first
+                if 'output_sas_path' in locals() and os.path.exists(output_sas_path):
+                    os.remove(output_sas_path)
+                # Then remove the temporary directory
+                os.rmdir(temp_dir)
+                # st.info(f"Cleaned up temporary directory: {temp_dir}") # Optional: for debugging
+            except Exception as e_clean_dir:
+                st.warning(f"Could not remove temporary directory {temp_dir}: {e_clean_dir}")
 
-        else:  # Single File
-            if uploaded_file is None:
-                st.error("⚠️ Please upload a `.xpt` file.")
-            else:
-                st.subheader(f"Converting: {uploaded_file.name}")
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".xpt") as tmp:
-                        tmp.write(uploaded_file.getvalue())
-                        temp_path = tmp.name
 
-                    df, meta = pyreadstat.read_xport(temp_path)
-                    column_labels = getattr(meta, 'column_names_to_labels', None)
-                    file_label = getattr(meta, 'file_label', None)
+elif convert_button:
+    st.warning("Please upload an .xpt file and provide an output filename.")
 
-                    output_file = output_path / f"{Path(uploaded_file.name).stem}.sas7bdat"
-                    pyreadstat.write_sas7dat(
-                        df,
-                        str(output_file),
-                        column_labels=column_labels,
-                        file_label=file_label
-                    )
-
-                    st.success(f"✅ File saved to `{output_file.resolve()}`")
-
-                except Exception as e:
-                    st.error(f"❌ Error converting file: {e}")
-                finally:
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-
-# --- Instructions ---
-st.sidebar.divider()
-st.sidebar.markdown("**How to Use:**")
-if conversion_mode == "Convert Directory":
-    st.sidebar.markdown("""
-1. Select **Convert Directory**.
-2. Provide input/output folder paths.
-3. Click **Convert File(s)**.
+st.sidebar.markdown("---")
+st.sidebar.header("Requirements")
+st.sidebar.markdown("""
+* **Python:** `streamlit`, `rpy2`
+* **R:** Base R installation
+* **R Package:** `haven`
 """)
-else:
-    st.sidebar.markdown("""
-1. Select **Convert Single File**.
-2. Upload a `.xpt` file.
-3. Provide an output folder path.
-4. Click **Convert File(s)**.
+st.sidebar.markdown("---")
+st.sidebar.header("Notes")
+st.sidebar.markdown("""
+* This app requires R to be installed on the system where Streamlit is running.
+* `rpy2` must be configured correctly to find your R installation.
+* The R package `haven` is required. The script attempts to install it if missing, but this might require specific permissions or network access depending on your environment.
+* Running this on platforms like Streamlit Community Cloud requires specifying R and its packages in the deployment configuration (e.g., using a `packages.txt` file for R packages).
 """)
